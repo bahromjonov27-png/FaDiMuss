@@ -11,10 +11,31 @@ import Workspace from "@/components/Workspace";
 const friendlyAuthErrors: Record<string, string> = {
   "auth/email-already-in-use": "Bu email bilan hisob mavjud. Kirishni tanlang.",
   "auth/invalid-credential": "Email yoki parol noto'g'ri.",
+  "auth/invalid-login-credentials": "Email yoki parol noto'g'ri. Email bilan parolni tekshiring.",
+  "auth/user-not-found": "Bu email bilan hisob topilmadi. Avval ro'yxatdan o'ting.",
+  "auth/wrong-password": "Parol noto'g'ri. Qayta tekshirib ko'ring.",
   "auth/weak-password": "Parol kamida 6 belgidan iborat bo'lsin.",
   "auth/invalid-email": "Email manzili to'g'ri ko'rinmayapti.",
   "auth/too-many-requests": "Urinishlar ko'p bo'ldi. Birozdan keyin qayta urinib ko'ring.",
+  "auth/operation-not-allowed": "Firebase Console'da Email/Password kirish usulini yoqing.",
+  "auth/network-request-failed": "Internet aloqasini tekshirib, qayta urinib ko'ring.",
+  "auth/unauthorized-domain": "Bu sayt manzili Firebase Authentication'da ruxsat etilmagan.",
+  "permission-denied": "Firestore yozishga ruxsat bermadi. firestore.rules faylini Firebase loyihasiga deploy qiling.",
+  "firestore/permission-denied": "Firestore yozishga ruxsat bermadi. firestore.rules faylini Firebase loyihasiga deploy qiling.",
+  "unavailable": "Firestore xizmatiga ulanib bo'lmadi. Internet yoki Firebase holatini tekshiring.",
+  "unauthenticated": "Firebase hisob sessiyasi tugagan. Qayta kirib ko'ring.",
+  "not-found": "Firestore bazasi topilmadi. Firebase Console'da Firestore Database yarating.",
 };
+
+function authErrorMessage(error: unknown) {
+  const errorObject = typeof error === "object" && error !== null ? error : null;
+  const code = errorObject && "code" in errorObject ? String(errorObject.code) : "";
+  return friendlyAuthErrors[code] ?? (code
+    ? `Firebase xatoligi (${code}). Firebase sozlamalarini tekshiring.`
+    : errorObject && "message" in errorObject && typeof errorObject.message === "string"
+      ? `Xatolik: ${errorObject.message}`
+      : "Xatolik tafsilotlari olinmadi. Sahifani yangilab, qayta urinib ko'ring.");
+}
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
@@ -33,10 +54,32 @@ export default function Home() {
       setUser(nextUser);
       if (!nextUser) { setProfile(null); setLoading(false); return; }
       try {
-        const snapshot = await getDoc(doc(firestore, "users", nextUser.uid));
-        setProfile(snapshot.exists() ? snapshot.data() as StudentProfile : null);
-      } catch {
-        setAuthError("Profilni yuklab bo'lmadi. Internet aloqasini tekshiring.");
+        const userRef = doc(firestore, "users", nextUser.uid);
+        const snapshot = await getDoc(userRef);
+        if (snapshot.exists()) {
+          setProfile(snapshot.data() as StudentProfile);
+        } else {
+          const initialProfile: StudentProfile = {
+            uid: nextUser.uid,
+            displayName: nextUser.displayName ?? nextUser.email?.split("@")[0] ?? "Talaba",
+            email: nextUser.email ?? "",
+            interests: [],
+            skills: [],
+            dailyAvailableMinutes: 90,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            onboardingCompleted: false,
+            xp: 0,
+            streak: 0,
+          };
+          await setDoc(userRef, {
+            ...initialProfile,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          setProfile(initialProfile);
+        }
+      } catch (error) {
+        setAuthError(authErrorMessage(error));
       }
       setLoading(false);
     });
@@ -49,22 +92,12 @@ export default function Home() {
     setAuthError("");
     try {
       if (authMode === "signup") {
-        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        await setDoc(doc(db, "users", credential.user.uid), {
-          uid: credential.user.uid,
-          displayName: email.split("@")[0],
-          email: credential.user.email,
-          interests: [], skills: [], dailyAvailableMinutes: 90,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          onboardingCompleted: false, xp: 0, streak: 0,
-          createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-        });
+        await createUserWithEmailAndPassword(auth, email.trim(), password);
       } else {
         await signInWithEmailAndPassword(auth, email.trim(), password);
       }
     } catch (error) {
-      const code = (error as { code?: string }).code ?? "";
-      setAuthError(friendlyAuthErrors[code] ?? "Hisobga kirishda xatolik yuz berdi. Qayta urinib ko'ring.");
+      setAuthError(authErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +128,7 @@ export default function Home() {
   if (user && profile?.onboardingCompleted) {
     return <Workspace user={user} profile={profile} onProfileChange={setProfile} onSignOut={async () => { if (auth) await signOut(auth); }} />;
   }
-  if (user) return <Onboarding user={user} onSubmit={completeOnboarding} />;
+  if (user) return <Onboarding user={user} onSubmit={completeOnboarding} initialError={authError} />;
 
   return (
     <main className="landing-shell">
@@ -150,14 +183,14 @@ export default function Home() {
   );
 }
 
-function Onboarding({ user, onSubmit }: { user: User; onSubmit: (values: Partial<StudentProfile> & { primaryGoal: string }) => Promise<void> }) {
+function Onboarding({ user, onSubmit, initialError }: { user: User; onSubmit: (values: Partial<StudentProfile> & { primaryGoal: string }) => Promise<void>; initialError: string }) {
   const [name, setName] = useState(user.displayName ?? "");
   const [education, setEducation] = useState("");
   const [goal, setGoal] = useState("");
   const [interests, setInterests] = useState("");
   const [skills, setSkills] = useState("");
   const [minutes, setMinutes] = useState(90);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [saving, setSaving] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
