@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owns(data) { return signedIn() && data.userId == request.auth.uid; }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.xp == 0
+        && request.resource.data.streak == 0;
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.xp == resource.data.xp
+        && request.resource.data.streak == resource.data.streak
+        && request.resource.data.get('lastActiveDate', null) == resource.data.get('lastActiveDate', null);
+      allow delete: if false;
+    }
+    match /goals/{goalId} {
+      allow read, delete: if owns(resource.data);
+      allow create: if owns(request.resource.data);
+      allow update: if owns(resource.data) && owns(request.resource.data)
+        && request.resource.data.userId == resource.data.userId;
+    }
+    match /tasks/{taskId} {
+      allow read, delete: if owns(resource.data);
+      allow create: if owns(request.resource.data)
+        && (!('goalId' in request.resource.data)
+          || get(/databases/$(database)/documents/goals/$(request.resource.data.goalId)).data.userId == request.auth.uid);
+      allow update: if owns(resource.data) && owns(request.resource.data)
+        && request.resource.data.userId == resource.data.userId
+        && (!('goalId' in request.resource.data)
+          || get(/databases/$(database)/documents/goals/$(request.resource.data.goalId)).data.userId == request.auth.uid);
+    }
+    match /focusSessions/{sessionId} {
+      allow read: if owns(resource.data);
+      allow write: if false;
+    }
+    match /activeFocus/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+    match /pointEvents/{eventId} {
+      allow read: if owns(resource.data);
+      allow write: if false;
+    }
+    match /talentAssessments/{assessmentId} {
+      allow read, delete: if owns(resource.data);
+      allow create: if owns(request.resource.data);
+      allow update: if owns(resource.data) && owns(request.resource.data);
+    }
+    match /skillProfiles/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.userId == uid;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+    match /publicSkillProfiles/{uid} {
+      allow read: if signedIn() && resource.data.visible == true;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.userId == uid
+        && request.resource.data.keys().hasOnly([
+          'userId', 'displayName', 'skillsToTeach', 'skillsToLearn', 'levels',
+          'languages', 'availabilitySummary', 'visible', 'updatedAt'
+        ])
+        && request.resource.data.visible is bool;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+    match /skillSwapRequests/{requestId} {
+      allow read: if signedIn() && (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.toUserId != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly([
+          'fromUserId', 'toUserId', 'offeredSkill', 'requestedSkill', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.offeredSkill is string
+        && request.resource.data.offeredSkill.size() <= 120
+        && request.resource.data.requestedSkill is string
+        && request.resource.data.requestedSkill.size() <= 120;
+      allow update: if signedIn() && resource.data.toUserId == request.auth.uid
+        && request.resource.data.fromUserId == resource.data.fromUserId
+        && request.resource.data.toUserId == resource.data.toUserId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status in ['accepted', 'declined'];
+      allow delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
