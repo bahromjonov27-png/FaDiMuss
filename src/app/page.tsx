@@ -18,7 +18,7 @@ const friendlyAuthErrors: Record<string, string> = {
   "auth/invalid-email": "Email manzili to'g'ri ko'rinmayapti.",
   "auth/too-many-requests": "Urinishlar ko'p bo'ldi. Birozdan keyin qayta urinib ko'ring.",
   "auth/operation-not-allowed": "Firebase Console'da Email/Password kirish usulini yoqing.",
-  "auth/network-request-failed": "Internet aloqasini tekshirib, qayta urinib ko'ring.",
+  "auth/network-request-failed": "Firebase serveriga ulanish muvaffaqiyatsiz. Internet, VPN yoki adblockni tekshiring. fadimuss.uz’da bo'lsa, deploydagi NEXT_PUBLIC_FIREBASE_* sozlamalari va Firebase Authentication ruxsat etilgan domenlarini tekshiring.",
   "auth/unauthorized-domain": "Bu sayt manzili Firebase Authentication'da ruxsat etilmagan.",
   "permission-denied": "Firestore yozishga ruxsat bermadi. firestore.rules faylini Firebase loyihasiga deploy qiling.",
   "firestore/permission-denied": "Firestore yozishga ruxsat bermadi. firestore.rules faylini Firebase loyihasiga deploy qiling.",
